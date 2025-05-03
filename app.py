@@ -1,7 +1,7 @@
-from flask import Flask, request, render_template, jsonify, redirect
-from flask_cors import CORS
-from sqlite_handler import *
+from fastapi import FastAPI
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
