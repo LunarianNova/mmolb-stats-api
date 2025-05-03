@@ -20,4 +20,4 @@ class Team:
             self.rank = -1
     
     def get_json(self) -> dict:
-        return {"id": self.id, "color": self.color, "emoji": self.emoji, "fullLocation": self.full_location, "league": self.league, "location": self.location, "name": self.name, "record": self.record, "elo": self.elo, "rank": self.rank}
+        return {"id": self.id, "color": self.color, "emoji": self.emoji, "full_location": self.full_location, "league": self.league, "location": self.location, "name": self.name, "record": self.record, "elo": self.elo, "rank": self.rank}

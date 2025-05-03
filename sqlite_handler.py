@@ -2,6 +2,10 @@ import sqlite3
 import urllib3
 import requests
 import ast
+from objects.game import Game
+from objects.league import League
+from objects.player import Player
+from objects.team import Team
 
 def get_json(url: str) -> dict:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -75,8 +79,7 @@ class TeamsDatabase(Database):
 
     def fetch_team_object(self, id : str) -> Team:
         team = super().execute_fetchone('''SELECT * FROM teams WHERE id = ?''', (id,))
-        team = Team(team)
-        return team
+        return Team(team)
     
     def update_all(self) -> None:
         self.update()
@@ -89,9 +92,9 @@ class TeamsDatabase(Database):
             team = teams[team]    # Get key's value
             team = Team(team)
             # Elo isn't from cashews, so make sure to keep it up to date
-            elo_list = super().execute_fetchone('''SELECT elo FROM teams WHERE id = ?''', (team.get_id(),))
-            team.set_elo(ast.literal_eval(elo_list[0]) if elo_list else {0: 1000})
-            super().execute(team.get_sql())
+            elo_list = super().execute_fetchone('''SELECT elo FROM teams WHERE id = ?''', (team.id,))
+            team.elo = ast.literal_eval(elo_list[0]) if elo_list else {0: 1000}
+            self.upsert_team(team)
         super().commit()
 
     def update_elo(self) -> None:
@@ -106,52 +109,52 @@ class TeamsDatabase(Database):
             game = Game(game_data)
 
             # If the day changes, commit all pending team updates
-            if game.get_day() != day:
+            if game.day != day:
                 for team in teams_to_update.values():
-                    super().execute(team.get_sql())
+                    self.upsert_team(team)
                 super().commit()
                 teams_to_update.clear()
-                day = game.get_day()
+                day = game.day
 
-            home_team = self.fetch_team_object(game.get_home_team_id())
-            away_team = self.fetch_team_object(game.get_away_team_id())
+            home_team = self.fetch_team_object(game.home_team_id)
+            away_team = self.fetch_team_object(game.away_team_id)
 
-            home_elos = ast.literal_eval(home_team.get_elo())
-            away_elos = ast.literal_eval(away_team.get_elo())
+            home_elos = ast.literal_eval(home_team.elo)
+            away_elos = ast.literal_eval(away_team.elo)
 
             # If already calculated for this day, skip
-            if game.get_day() in home_elos:
-                gamesDatabase.execute('''UPDATE games SET state = "Processed" WHERE id = ?''', (game.get_id(),))
+            if game.day in home_elos:
+                gamesDatabase.execute('''UPDATE games SET state = "Processed" WHERE id = ?''', (game.id,))
                 continue
 
             # Safely find the latest available ELO for or before the current day
-            home_elo_day = max((d for d in home_elos.keys() if d <= game.get_day()), default=min(home_elos.keys()))
-            away_elo_day = max((d for d in away_elos.keys() if d <= game.get_day()), default=min(away_elos.keys()))
+            home_elo_day = max((d for d in home_elos.keys() if d <= game.day), default=min(home_elos.keys()))
+            away_elo_day = max((d for d in away_elos.keys() if d <= game.day), default=min(away_elos.keys()))
 
             home_elo = home_elos[home_elo_day]
             away_elo = away_elos[away_elo_day]
 
             new_home_elo, new_away_elo = self.calculate_elo(
-                (game.get_home_score(), game.get_away_score()), (home_elo, away_elo)
+                (game.home_score, game.away_score), (home_elo, away_elo)
             )
 
             # Update ELOs for the current day
-            home_elos[game.get_day()] = new_home_elo
-            away_elos[game.get_day()] = new_away_elo
+            home_elos[game.day] = new_home_elo
+            away_elos[game.day] = new_away_elo
 
-            home_team.set_elo(home_elos)
-            away_team.set_elo(away_elos)
+            home_team.elo = home_elos
+            away_team.elo = away_elos
 
-            teams_to_update[home_team.get_id()] = home_team
-            teams_to_update[away_team.get_id()] = away_team
+            teams_to_update[home_team.id] = home_team
+            teams_to_update[away_team.id] = away_team
 
-            gamesDatabase.execute('''UPDATE games SET state = "Processed" WHERE id = ?''', (game.get_id(),))
+            gamesDatabase.execute('''UPDATE games SET state = "Processed" WHERE id = ?''', (game.id,))
 
 
         # Final commit for any leftovers
         gamesDatabase.commit()
         for team in teams_to_update.values():
-            super().execute(team.get_sql())
+            self.upsert_team(team)
         super().commit()
     
     def calculate_elo(self, scores: tuple[int, int], elos: tuple[int, int]) -> tuple[int, int]:
@@ -164,3 +167,8 @@ class TeamsDatabase(Database):
         new_elo_0 = int(elos[0] + k * (score_0 - prob_0))
         new_elo_1 = int(elos[1] + k * (score_1 - (1 - prob_0)))
         return (new_elo_0, new_elo_1)
+    
+    def upsert_team(self, team: Team, commit=False) -> None:
+        super().execute('''INSERT OR REPLACE INTO teams(id, color, emoji, full_location, league, location, name, record, elo, rank) VALUES (:id, :color, :emoji, :full_location, :league, :location, :name, :record, :elo, :rank)''', team.get_json())
+        if commit: super().commit()
+
