@@ -172,3 +172,43 @@ class TeamsDatabase(Database):
         super().execute('''INSERT OR REPLACE INTO teams(id, color, emoji, full_location, league, location, name, record, elo, rank) VALUES (:id, :color, :emoji, :full_location, :league, :location, :name, :record, :elo, :rank)''', team.get_json())
         if commit: super().commit()
 
+class LeaguesDatabase(Database):
+    def __init__(self):
+        super().__init__('leagues.db') 
+
+    def create_table(self) -> None:
+        super().execute_commit('''CREATE TABLE IF NOT EXISTS leagues(id STRING UNIQUE, color STRING, emoji STRING, league_type STRING, name STRING, teams STRING)''')
+
+    def fetch_league_object(self, id : str) -> League:
+        data = super().execute_fetchone('''SELECT * FROM leagues WHERE id = ?''', (id,))
+        return League(data)
+    
+    def update(self) -> None:
+        league_ids = [
+            "6805db0cac48194de3cd3fe4",
+            "6805db0cac48194de3cd3fe5",
+            "6805db0cac48194de3cd3fe7",
+            "6805db0cac48194de3cd3fe8",
+            "6805db0cac48194de3cd3fe9",
+            "6805db0cac48194de3cd3fea",
+            "6805db0cac48194de3cd3feb",
+            "6805db0cac48194de3cd3fec",
+            "6805db0cac48194de3cd3fed",
+            "6805db0cac48194de3cd3fee",
+            "6805db0cac48194de3cd3fef",
+            "6805db0cac48194de3cd3ff1",
+            "6805db0cac48194de3cd3ff0",
+            "6805db0cac48194de3cd3ff2",
+            "6805db0cac48194de3cd3ff3",
+            "6805db0cac48194de3cd3ff4",
+            "6805db0cac48194de3cd3ff5",
+            "6805db0cac48194de3cd3ff6"
+        ]
+        for id in league_ids:
+            league = get_json(f"https://mmolb.com/api/league/{id}")
+            self.upsert_league(League(league))
+        super().commit()
+
+    def upsert_league(self, league: League, commit:bool=False) -> None:
+        super().execute('''INSERT OR REPLACE INTO leagues(id, color, emoji, league_type, name, teams) VALUES (:id, :color, :emoji, :league_type, :name, :teams)''', league.get_json())
+        if commit: super().commit()
