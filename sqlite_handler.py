@@ -4,16 +4,24 @@ import requests
 import ast
 import atexit
 import player_parser
+import statistics
+import numpy as np
+import json
 from objects.game import Game
 from objects.league import League
 from objects.player import Player
 from objects.team import Team
+
+STATS = ['allowed_stolen_bases', 'allowed_stolen_bases_risp', 'assists', 'assists_risp', 'at_bats', 'at_bats_risp', 'caught_stealing', 'caught_stealing_risp', 'double_plays', 'double_plays_risp', 'doubles', 'doubles_risp', 'field_out', 'field_out_risp', 'fielders_choice', 'flyouts', 'flyouts_risp', 'force_outs', 'force_outs_risp', 'grounded_into_double_play', 'groundout', 'groundout_risp', 'home_runs', 'home_runs_risp', 'left_on_base', 'left_on_base_risp', 'lineouts', 'lineouts_risp', 'plate_appearances', 'plate_appearances_risp', 'popouts', 'popouts_risp', 'putouts', 'putouts_risp', 'reached_on_error', 'runners_caught_stealing', 'runners_caught_stealing_risp', 'runs', 'runs_batted_in', 'runs_batted_in_risp', 'runs_risp', 'sac_flies', 'sac_flies_risp', 'singles', 'singles_risp', 'stolen_bases', 'stolen_bases_risp', 'struck_out', 'struck_out_risp', 'walked', 'walked_risp', 'fielders_choice_risp', 'grounded_into_double_play_risp', 'hit_by_pitch', 'reached_on_error_risp', 'triples', 'triples_risp', 'appearances', 'batters_faced', 'batters_faced_risp', 'earned_runs', 'earned_runs_risp', 'errors', 'errors_risp', 'games_finished', 'hits_allowed', 'hits_allowed_risp', 'losses', 'outs', 'pitches_thrown', 'pitches_thrown_risp', 'strikeouts', 'strikeouts_risp', 'walks', 'caught_double_play', 'caught_double_play_risp', 'hit_by_pitch_risp', 'sacrifice_double_plays', 'sacrifice_double_plays_risp', 'hit_batters', 'home_runs_allowed', 'home_runs_allowed_risp', 'mound_visits', 'quality_starts', 'starts', 'unearned_runs', 'unearned_runs_risp', 'walks_risp', 'wins', 'inherited_runners', 'inherited_runners_risp', 'hit_batters_risp', 'inherited_runs_allowed', 'inherited_runs_allowed_risp', 'complete_games', 'shutouts', 'blown_saves', 'saves', 'no_hitters', 'perfect_games']    
 
 def get_json(url: str) -> dict:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     # Remove verify because freecashews errors otherwise
     data = requests.get(url, verify=False).json()
     return data
+
+def store_json(data: dict) -> str:
+    return json.dumps(data, separators=(',', ':'), ensure_ascii=False)
 
 class SingletonBase:
     _instances = {}
@@ -247,6 +255,55 @@ class PlayersDatabase(Database):
         data = super().execute_fetchone(f'''SELECT * FROM players{day} WHERE id = ?''', (id,))
         return Player(data)
     
+    # Chunk this?
+    def calculate_median(self, day: int) -> None:
+        # Get all players
+        players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players{day}''')]
+        median_player = {"id": "median", "first_name": "Median Player", "last_name": "(All Leagues)", "Stats": {}}
+
+        # Loop through stats
+        for stat in STATS:
+            # get any non-zero stat
+            values = []
+            for player in players:
+                v = player.stats.get(stat, 0)
+                if v != 0: values.append(v)
+            if values:
+                median_player["Stats"][stat] = statistics.median(values)
+        
+        median_player = Player(median_player)
+        self.upsert_player(median_player, commit=True)
+
+    # Also chunk this?
+    # Also not tested. Like everything else I've written thus far
+    def calculate_bins(self, day: int) -> None:
+        super().execute('''DROP TABLE IF EXISTS bins''')
+        super().execute_commit('''CREATE TABLE bins(day, INTEGER, number INTEGER, data STRING)''')
+
+        players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players{day}''')]
+        # Calculated stats
+        stats = ['strikeouts_per_nine_innings', 'walks_per_nine_innings', 'home_runs_per_nine_innings', 'walks_and_hits_per_inning_played', 'earned_run_average', 'innings_pitched', 'stolen_base_percentage', 'slugging_percentage', 'on_base_plus_slugging', 'on_base_percentage', 'batting_average']
+        binned_players = [{} for _ in range(9)]
+
+        for stat in stats:
+            data = []
+            for player in players:
+                try:
+                    # Has to calculate the stat, so it needs to be player object
+                    v = getattr(player, 'get_' + stat)()
+                    if v != 0:
+                        data.append(v)
+                except ZeroDivisionError:
+                    pass
+            if data:
+                percentiles = np.percentile(data, [10 * i for i in range(1, 10)])
+                for i, value in enumerate(percentiles):
+                    binned_players[i][stat] = value
+            
+        rows = [(day, i, store_json(binned_players[i])) for i in range(9)]
+        super().execute_many('INSERT INTO bins(day, number, data) VALUES(?, ?)', rows)
+        super().commit()
+
     def update(self, destructive:bool=False) -> None:
         chunk_size = 1024
         buffer = []
@@ -269,9 +326,8 @@ class PlayersDatabase(Database):
                 self.upsert_player(p)
             super().commit()
 
-        # These will be implemented in the future
-        # self.calculate_median()
-        # self.calculate_bins()
+        self.calculate_median()
+        self.calculate_bins()
 
 def create_tables():
     TeamsDatabase().create_table()
