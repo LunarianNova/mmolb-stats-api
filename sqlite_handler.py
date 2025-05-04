@@ -184,28 +184,10 @@ class LeaguesDatabase(Database):
         return League(data)
     
     def update(self) -> None:
-        league_ids = [
-            "6805db0cac48194de3cd3fe4",
-            "6805db0cac48194de3cd3fe5",
-            "6805db0cac48194de3cd3fe7",
-            "6805db0cac48194de3cd3fe8",
-            "6805db0cac48194de3cd3fe9",
-            "6805db0cac48194de3cd3fea",
-            "6805db0cac48194de3cd3feb",
-            "6805db0cac48194de3cd3fec",
-            "6805db0cac48194de3cd3fed",
-            "6805db0cac48194de3cd3fee",
-            "6805db0cac48194de3cd3fef",
-            "6805db0cac48194de3cd3ff1",
-            "6805db0cac48194de3cd3ff0",
-            "6805db0cac48194de3cd3ff2",
-            "6805db0cac48194de3cd3ff3",
-            "6805db0cac48194de3cd3ff4",
-            "6805db0cac48194de3cd3ff5",
-            "6805db0cac48194de3cd3ff6"
-        ]
+        teamsDatabase = TeamsDatabase()
+        league_ids = teamsDatabase.execute_fetchall('''SELECT DISTINCT league FROM teams''')
         for id in league_ids:
-            league = get_json(f"https://mmolb.com/api/league/{id}")
+            league = get_json(f"https://mmolb.com/api/league/{id[0]}")
             self.upsert_league(League(league))
         super().commit()
 
