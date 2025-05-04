@@ -3,6 +3,7 @@ import urllib3
 import requests
 import ast
 import atexit
+import player_parser
 from objects.game import Game
 from objects.league import League
 from objects.player import Player
@@ -229,6 +230,48 @@ class GamesDatabase(Database):
         super().execute('''UPDATE games SET id=:id, day=:day, home_team_id=:home_team_id, away_team_id=:away_team_id, home_score=:home_score, away_score=:away_score, state=:state WHERE state != "Processed"''', game.get_json())
         if commit:
             super().commit()
+
+# so help me god
+class PlayersDatabase(Database):
+    def __init__(self):
+        super().__init__('players.db')
+
+    def create_table(self, day: int) -> None:
+        super().execute_commit(f'''CREATE TABLE IF NOT EXISTS day{day}(id STRING UNIQUE, first_name STRING, last_name STRING, team_id STRING, likes STRING, dislikes STRING, bats STRING, throws STRING, number STRING, position STRING, augments INTEGER, home STRING, stats STRING)''')
+
+    def upsert_player(self, player: Player, commit:bool=False) -> None:
+        super().execute('''INSERT OR REPLACE INTO players (id, first_name, last_name, team_id, likes, dislikes, bats, throws, number, position, augments, home, stats) VALUES (:id, :first_name, :last_name, :team_id, :likes, :dislikes, :bats, :throws, :number, :position, :augments, :home, :stats)''', player,get_json())
+        if commit: super().commit()
+
+    def fetch_player_object(self, id: str, day: int) -> Player:
+        data = super().execute_fetchone(f'''SELECT * FROM players{day} WHERE id = ?''', (id,))
+        return Player(data)
+    
+    def update(self, destructive:bool=False) -> None:
+        chunk_size = 1024
+        buffer = []
+        # Iterable now (:
+        # Also this is the line I had mistyped that made the old system break (get_players vs get_updated_players)
+        data = player_parser.get_players() if not destructive else player_parser.get_updated_players()
+        for player_data in player_parser.get_updated_players():
+            buffer.append(Player(player_data))
+
+            # Commit the buffer
+            if len(buffer) >= chunk_size:
+                for p in buffer:
+                    self.upsert_player(p)
+                super().commit()
+                buffer.clear()
+
+        # Process remaining folk (left from the last chunk)
+        if buffer:
+            for p in buffer:
+                self.upsert_player(p)
+            super().commit()
+
+        # These will be implemented in the future
+        # self.calculate_median()
+        # self.calculate_bins()
 
 def create_tables():
     TeamsDatabase().create_table()
