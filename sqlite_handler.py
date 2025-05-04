@@ -2,6 +2,7 @@ import sqlite3
 import urllib3
 import requests
 import ast
+import atexit
 from objects.game import Game
 from objects.league import League
 from objects.player import Player
@@ -194,3 +195,41 @@ class LeaguesDatabase(Database):
     def upsert_league(self, league: League, commit:bool=False) -> None:
         super().execute('''INSERT OR REPLACE INTO leagues(id, color, emoji, league_type, name, teams) VALUES (:id, :color, :emoji, :league_type, :name, :teams)''', league.get_json())
         if commit: super().commit()
+
+class GamesDatabase(Database):
+    def __init__(self):
+        super().__init__('games.db') 
+
+    def create_table(self) -> None:
+        super().execute_commit('''CREATE TABLE IF NOT EXISTS games(id STRING UNIQUE, season INTEGER, day INTEGER, home_team_id STRING, away_team_id STRING, home_score INTEGER, away_score INTEGER, state STRING)''')
+    
+    def fetch_game_object(self, id : str) -> Game:
+        data = super().execute_fetchone('''SELECT * FROM games WHERE id = ?''', (id,))
+        return Game(data)
+    
+    def update(self) -> None:
+        games = get_json(f"https://freecashe.ws/api/games")
+        buffer = []
+        chunk_size = 1024
+        for game in games:
+            buffer.append(Game(game))
+            if len(buffer) >= chunk_size:
+                for g in buffer:
+                    ... # Write an upsert for games (Needs to check if state == "Processed")
+                super().commit()
+                buffer.clear()
+        for g in buffer:
+            ... # Write an upsert for games (Needs to check if state == "Processed")
+        super().commit()
+
+def create_tables():
+    TeamsDatabase().create_table()
+    LeaguesDatabase().create_table()
+    GamesDatabase().create_table()
+
+def close_databases():
+    TeamsDatabase().close()
+    LeaguesDatabase().close()
+    GamesDatabase().close()
+
+atexit.register(close_databases)
