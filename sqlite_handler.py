@@ -215,12 +215,20 @@ class GamesDatabase(Database):
             buffer.append(Game(game))
             if len(buffer) >= chunk_size:
                 for g in buffer:
-                    ... # Write an upsert for games (Needs to check if state == "Processed")
+                    self.upsert_game(g)
                 super().commit()
                 buffer.clear()
         for g in buffer:
-            ... # Write an upsert for games (Needs to check if state == "Processed")
+            self.upsert_game(g)
         super().commit()
+
+    def upsert_game(self, game: Game, commit:bool=False) -> None:
+        # Insert a new game if the game isn't in the db
+        super().execute('''INSERT OR IGNORE INTO games (id, season, day, home_team_id, away_team_id, home_score, away_score, state) VALUES (:id, :season, :day, :home_team_id, :away_team_id, :home_score, :away_score, :state)''', game.get_json())
+        # Otherwise update the game entry if it isn't already processed
+        super().execute('''UPDATE games SET id=:id, day=:day, home_team_id=:home_team_id, away_team_id=:away_team_id, home_score=:home_score, away_score=:away_score, state=:state WHERE state != "Processed"''', game.get_json())
+        if commit:
+            super().commit()
 
 def create_tables():
     TeamsDatabase().create_table()
