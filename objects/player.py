@@ -19,7 +19,7 @@ class Player:
             self.stats = data.get("Stats", {})
         # From the database
         elif type(data) == tuple:
-            self.id, self.first_name, self.last_name, self.team_id, self.likes, self.dislikes, self.bats, self.throws, self.number, self.position, self.augments, self.home, stats_json = data
+            self.id, self.day, self.season, self.first_name, self.last_name, self.team_id, self.likes, self.dislikes, self.bats, self.throws, self.number, self.position, self.augments, self.home, stats_json = data
             self.stats = json.loads(stats_json)
         else:
             raise ValueError("Player __init__ only processes tuple or (json) dictionaries")
@@ -83,4 +83,6 @@ class Player:
         return (po + a) / (po + a + e) if (po + a + e) != 0 else 0
 
     def get_json(self):
-        return {"id": self.id, "first_name": self.first_name, "last_name": self.last_name, "team_id": self.team_id, "likes": self.likes, "dislikes": self.dislikes, "bats": self.bats, "throws": self.throws, "number": self.number, "position": self.position, "augments": self.augments, "home": self.home, "stats": self.stats}
+        season = self.season if self.season else -1
+        day = self.day if self.day else -1
+        return {"id": self.id, "day": day, "season": season, "first_name": self.first_name, "last_name": self.last_name, "team_id": self.team_id, "likes": self.likes, "dislikes": self.dislikes, "bats": self.bats, "throws": self.throws, "number": self.number, "position": self.position, "augments": self.augments, "home": self.home, "stats": self.stats}

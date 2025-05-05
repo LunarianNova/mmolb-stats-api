@@ -244,8 +244,8 @@ class PlayersDatabase(Database):
     def __init__(self):
         super().__init__('players.db')
 
-    def create_table(self, day: int) -> None:
-        super().execute_commit(f'''CREATE TABLE IF NOT EXISTS day{day}(id STRING UNIQUE, first_name STRING, last_name STRING, team_id STRING, likes STRING, dislikes STRING, bats STRING, throws STRING, number STRING, position STRING, augments INTEGER, home STRING, stats STRING)''')
+    def create_table(self) -> None:
+        super().execute_commit(f'''CREATE TABLE IF NOT EXISTS players(id NOT NULL, season INTEGER NOT NULL, day INTEGER NOT NULL, first_name STRING, last_name STRING, team_id STRING, likes STRING, dislikes STRING, bats STRING, throws STRING, number STRING, position STRING, augments INTEGER, home STRING, stats STRING, PRIMARY KEY(id, day))''')
 
     def upsert_player(self, player: Player, commit:bool=False) -> None:
         super().execute('''INSERT OR REPLACE INTO players (id, first_name, last_name, team_id, likes, dislikes, bats, throws, number, position, augments, home, stats) VALUES (:id, :first_name, :last_name, :team_id, :likes, :dislikes, :bats, :throws, :number, :position, :augments, :home, :stats)''', player,get_json())
@@ -256,9 +256,9 @@ class PlayersDatabase(Database):
         return Player(data)
     
     # Chunk this?
-    def calculate_median(self, day: int) -> None:
+    def calculate_median(self, day: int, season: int) -> None:
         # Get all players
-        players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players{day}''')]
+        players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players WHERE day = ? AND season = ?''', (day, season,))]
         median_player = {"id": "median", "first_name": "Median Player", "last_name": "(All Leagues)", "Stats": {}}
 
         # Loop through stats
@@ -272,15 +272,17 @@ class PlayersDatabase(Database):
                 median_player["Stats"][stat] = statistics.median(values)
         
         median_player = Player(median_player)
+        median_player.day = day
+        median_player.season = season
         self.upsert_player(median_player, commit=True)
 
     # Also chunk this?
     # Also not tested. Like everything else I've written thus far
-    def calculate_bins(self, day: int) -> None:
+    def calculate_bins(self, day: int, season: int) -> None:
         super().execute('''DROP TABLE IF EXISTS bins''')
-        super().execute_commit('''CREATE TABLE bins(day, INTEGER, number INTEGER, data STRING)''')
+        super().execute_commit('''CREATE TABLE bins(day INTEGER, season INTEGER, number INTEGER, data STRING)''')
 
-        players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players{day}''')]
+        players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players WHERE day = ? AND season = ?''', (day, season,))]
         # Calculated stats
         stats = ['strikeouts_per_nine_innings', 'walks_per_nine_innings', 'home_runs_per_nine_innings', 'walks_and_hits_per_inning_played', 'earned_run_average', 'innings_pitched', 'stolen_base_percentage', 'slugging_percentage', 'on_base_plus_slugging', 'on_base_percentage', 'batting_average']
         binned_players = [{} for _ in range(9)]
@@ -300,18 +302,24 @@ class PlayersDatabase(Database):
                 for i, value in enumerate(percentiles):
                     binned_players[i][stat] = value
             
-        rows = [(day, i, store_json(binned_players[i])) for i in range(9)]
-        super().execute_many('INSERT INTO bins(day, number, data) VALUES(?, ?)', rows)
+        rows = [(day, season, i, store_json(binned_players[i])) for i in range(9)]
+        super().execute_many('INSERT INTO bins(day, season, number, data) VALUES(?, ?, ?, ?)', rows)
         super().commit()
 
     def update(self, destructive:bool=False) -> None:
         chunk_size = 1024
         buffer = []
+        date = get_json("https://mmolb.com/api/time")
+        day = date["season_day"]
+        season = date["season_number"]
         # Iterable now (:
         # Also this is the line I had mistyped that made the old system break (get_players vs get_updated_players)
         data = player_parser.get_players() if not destructive else player_parser.get_updated_players()
-        for player_data in player_parser.get_updated_players():
-            buffer.append(Player(player_data))
+        for player_data in data:
+            player = Player(player_data)
+            player.day = day
+            player.season = season
+            buffer.append(player)
 
             # Commit the buffer
             if len(buffer) >= chunk_size:
