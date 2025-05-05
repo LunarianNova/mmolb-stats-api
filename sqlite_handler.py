@@ -7,10 +7,7 @@ import player_parser
 import statistics
 import numpy as np
 import json
-from objects.game import Game
-from objects.league import League
-from objects.player import Player
-from objects.team import Team
+from objects import *
 
 STATS = ['allowed_stolen_bases', 'allowed_stolen_bases_risp', 'assists', 'assists_risp', 'at_bats', 'at_bats_risp', 'caught_stealing', 'caught_stealing_risp', 'double_plays', 'double_plays_risp', 'doubles', 'doubles_risp', 'field_out', 'field_out_risp', 'fielders_choice', 'flyouts', 'flyouts_risp', 'force_outs', 'force_outs_risp', 'grounded_into_double_play', 'groundout', 'groundout_risp', 'home_runs', 'home_runs_risp', 'left_on_base', 'left_on_base_risp', 'lineouts', 'lineouts_risp', 'plate_appearances', 'plate_appearances_risp', 'popouts', 'popouts_risp', 'putouts', 'putouts_risp', 'reached_on_error', 'runners_caught_stealing', 'runners_caught_stealing_risp', 'runs', 'runs_batted_in', 'runs_batted_in_risp', 'runs_risp', 'sac_flies', 'sac_flies_risp', 'singles', 'singles_risp', 'stolen_bases', 'stolen_bases_risp', 'struck_out', 'struck_out_risp', 'walked', 'walked_risp', 'fielders_choice_risp', 'grounded_into_double_play_risp', 'hit_by_pitch', 'reached_on_error_risp', 'triples', 'triples_risp', 'appearances', 'batters_faced', 'batters_faced_risp', 'earned_runs', 'earned_runs_risp', 'errors', 'errors_risp', 'games_finished', 'hits_allowed', 'hits_allowed_risp', 'losses', 'outs', 'pitches_thrown', 'pitches_thrown_risp', 'strikeouts', 'strikeouts_risp', 'walks', 'caught_double_play', 'caught_double_play_risp', 'hit_by_pitch_risp', 'sacrifice_double_plays', 'sacrifice_double_plays_risp', 'hit_batters', 'home_runs_allowed', 'home_runs_allowed_risp', 'mound_visits', 'quality_starts', 'starts', 'unearned_runs', 'unearned_runs_risp', 'walks_risp', 'wins', 'inherited_runners', 'inherited_runners_risp', 'hit_batters_risp', 'inherited_runs_allowed', 'inherited_runs_allowed_risp', 'complete_games', 'shutouts', 'blown_saves', 'saves', 'no_hitters', 'perfect_games']    
 
