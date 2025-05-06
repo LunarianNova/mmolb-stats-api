@@ -1,0 +1,4 @@
+*.pyc
+*.db
+*.pyc
+__pycache__/sqlite_handler.cpython-313.pyc
