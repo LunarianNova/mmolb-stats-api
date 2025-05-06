@@ -1,3 +1,5 @@
+import json
+
 class Team:
     __slots__ = ['id', 'color', 'emoji', 'full_location', 'league', 'location', 'name', 'record', 'elo', 'rank']
 
@@ -20,4 +22,8 @@ class Team:
             self.rank = -1
     
     def get_json(self) -> dict:
+        if type(self.record) != dict:
+            self.record = json.loads(self.record)
+        if type(self.elo) != dict:
+            self.elo = json.loads(self.record)
         return {"id": self.id, "color": self.color, "emoji": self.emoji, "full_location": self.full_location, "league": self.league, "location": self.location, "name": self.name, "record": self.record, "elo": self.elo, "rank": self.rank}

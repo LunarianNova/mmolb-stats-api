@@ -106,16 +106,16 @@ class TeamsDatabase(Database):
 
     def update_elo(self) -> None:
         gamesDatabase = GamesDatabase()
-        day = 1
+        day = None
         teams_to_update = {}
+        games_to_update = []
 
-        # Load all games ordered by day
         count = 0
         for game_data in gamesDatabase.execute_fetchall('''SELECT * FROM games WHERE state = "Complete" ORDER BY day ASC'''):
             count += 1
             game = Game(game_data)
 
-            # If the day changes, commit all pending team updates
+            # If the day changes, commit all pending elo updates
             if game.day != day:
                 for team in teams_to_update.values():
                     self.upsert_team(team)
@@ -126,26 +126,29 @@ class TeamsDatabase(Database):
             home_team = self.fetch_team_object(game.home_team_id)
             away_team = self.fetch_team_object(game.away_team_id)
 
-            home_elos = ast.literal_eval(home_team.elo)
-            away_elos = ast.literal_eval(away_team.elo)
+            def load_elo(team):
+                elos = json.loads(team.elo)
+                return {int(d): e for d, e in elos.items() if type(d) == str and d.isdigit()}
+
+            home_elos = load_elo(home_team)
+            away_elos = load_elo(away_team)
 
             # If already calculated for this day, skip
             if game.day in home_elos:
-                gamesDatabase.execute('''UPDATE games SET state = "Processed" WHERE id = ?''', (game.id,))
+                games_to_update.append(game.id)
                 continue
 
-            # Safely find the latest available ELO for or before the current day
+            
+            # Find the most recent elo for or before the current day
             home_elo_day = max((d for d in home_elos.keys() if d <= game.day), default=min(home_elos.keys()))
             away_elo_day = max((d for d in away_elos.keys() if d <= game.day), default=min(away_elos.keys()))
 
             home_elo = home_elos[home_elo_day]
             away_elo = away_elos[away_elo_day]
 
-            new_home_elo, new_away_elo = self.calculate_elo(
-                (game.home_score, game.away_score), (home_elo, away_elo)
-            )
+            new_home_elo, new_away_elo = self.calculate_elo((game.home_score, game.away_score), (home_elo, away_elo))
 
-            # Update ELOs for the current day
+            # Update elos for the current day
             home_elos[game.day] = new_home_elo
             away_elos[game.day] = new_away_elo
 
@@ -155,13 +158,14 @@ class TeamsDatabase(Database):
             teams_to_update[home_team.id] = home_team
             teams_to_update[away_team.id] = away_team
 
-            gamesDatabase.execute('''UPDATE games SET state = "Processed" WHERE id = ?''', (game.id,))
-
+            games_to_update.append(game.id)
 
         # Final commit for any leftovers
-        gamesDatabase.commit()
         for team in teams_to_update.values():
             self.upsert_team(team)
+        # Update the game entries
+        gamesDatabase.execute_many('''UPDATE games SET state = "Processed" WHERE id = ?''', [(id,) for id in games_to_update])
+        gamesDatabase.commit()
         super().commit()
     
     def calculate_elo(self, scores: tuple[int, int], elos: tuple[int, int]) -> tuple[int, int]:
@@ -176,7 +180,10 @@ class TeamsDatabase(Database):
         return (new_elo_0, new_elo_1)
     
     def upsert_team(self, team: Team, commit=False) -> None:
-        super().execute('''INSERT OR REPLACE INTO teams(id, color, emoji, full_location, league, location, name, record, elo, rank) VALUES (:id, :color, :emoji, :full_location, :league, :location, :name, :record, :elo, :rank)''', team.get_json())
+        team = team.get_json()
+        team['record'] = json.dumps(team['record'])
+        team['elo'] = json.dumps(team['elo'])
+        super().execute('''INSERT OR REPLACE INTO teams(id, color, emoji, full_location, league, location, name, record, elo, rank) VALUES (:id, :color, :emoji, :full_location, :league, :location, :name, :record, :elo, :rank)''', team)
         if commit: super().commit()
 
 class LeaguesDatabase(Database):
@@ -199,7 +206,9 @@ class LeaguesDatabase(Database):
         super().commit()
 
     def upsert_league(self, league: League, commit:bool=False) -> None:
-        super().execute('''INSERT OR REPLACE INTO leagues(id, color, emoji, league_type, name, teams) VALUES (:id, :color, :emoji, :league_type, :name, :teams)''', league.get_json())
+        league = league.get_json()
+        league['teams'] = json.dumps(league['teams'])
+        super().execute('''INSERT OR REPLACE INTO leagues(id, color, emoji, league_type, name, teams) VALUES (:id, :color, :emoji, :league_type, :name, :teams)''', league)
         if commit: super().commit()
 
 class GamesDatabase(Database):
@@ -208,33 +217,39 @@ class GamesDatabase(Database):
 
     def create_table(self) -> None:
         super().execute_commit('''CREATE TABLE IF NOT EXISTS games(id STRING UNIQUE, season INTEGER, day INTEGER, home_team_id STRING, away_team_id STRING, home_score INTEGER, away_score INTEGER, state STRING)''')
-    
+        super().execute_commit('''CREATE INDEX IF NOT EXISTS state_id_index ON games(state, id)''')
+
     def fetch_game_object(self, id : str) -> Game:
         data = super().execute_fetchone('''SELECT * FROM games WHERE id = ?''', (id,))
         return Game(data)
     
     def update(self) -> None:
         games = get_json(f"https://freecashe.ws/api/games")
+        processed = super().execute_fetchall('''SELECT id FROM games WHERE state = "Processed"''')
+        processed = {g[0] for g in processed}
         buffer = []
         chunk_size = 1024
         for game in games:
-            buffer.append(Game(game))
-            if len(buffer) >= chunk_size:
-                for g in buffer:
-                    self.upsert_game(g)
-                super().commit()
-                buffer.clear()
-        for g in buffer:
-            self.upsert_game(g)
-        super().commit()
+            if game['game_id'] not in processed:
+                buffer.append(Game(game))
+                if len(buffer) >= chunk_size:
+                    self.upsert_games_bulk(buffer)
+                    buffer.clear()
+        self.upsert_games_bulk(buffer)
 
     def upsert_game(self, game: Game, commit:bool=False) -> None:
-        # Insert a new game if the game isn't in the db
-        super().execute('''INSERT OR IGNORE INTO games (id, season, day, home_team_id, away_team_id, home_score, away_score, state) VALUES (:id, :season, :day, :home_team_id, :away_team_id, :home_score, :away_score, :state)''', game.get_json())
-        # Otherwise update the game entry if it isn't already processed
-        super().execute('''UPDATE games SET id=:id, day=:day, home_team_id=:home_team_id, away_team_id=:away_team_id, home_score=:home_score, away_score=:away_score, state=:state WHERE state != "Processed"''', game.get_json())
+        # Insert a new game if the game isn't in the db, or update it
+        # Excluded is apparently a virtual table with the entry that caused it to fail
+        super().execute('''INSERT INTO games (id, season, day, home_team_id, away_team_id, home_score, away_score, state) VALUES (:id, :season, :day, :home_team_id, :away_team_id, :home_score, :away_score, :state) ON CONFLICT(id) DO UPDATE SET home_score = excluded.home_score, away_score = excluded.away_score, state = excluded.state WHERE games.state != "Processed"''', game.get_json())
         if commit:
             super().commit()
+
+    # Trust me... I'm not even sure what I'm doing anymore
+    def upsert_games_bulk(self, games: list[Game]) -> None:
+        rows = [(g.id, g.season, g.day, g.home_team_id, g.away_team_id, g.home_score, g.away_score, g.state) for g in games]
+        query = '''INSERT INTO games (id, season, day, home_team_id, away_team_id, home_score, away_score, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET home_score = excluded.home_score, away_score = excluded.away_score, state = excluded.state'''
+        super().execute_many(query, rows)
+        super().commit()
 
 # so help me god
 class PlayersDatabase(Database):
@@ -245,7 +260,7 @@ class PlayersDatabase(Database):
         super().execute_commit(f'''CREATE TABLE IF NOT EXISTS players(id NOT NULL, season INTEGER NOT NULL, day INTEGER NOT NULL, first_name STRING, last_name STRING, team_id STRING, likes STRING, dislikes STRING, bats STRING, throws STRING, number STRING, position STRING, augments INTEGER, home STRING, stats STRING, PRIMARY KEY(id, day))''')
 
     def upsert_player(self, player: Player, commit:bool=False) -> None:
-        super().execute('''INSERT OR REPLACE INTO players (id, first_name, last_name, team_id, likes, dislikes, bats, throws, number, position, augments, home, stats) VALUES (:id, :first_name, :last_name, :team_id, :likes, :dislikes, :bats, :throws, :number, :position, :augments, :home, :stats)''', player,get_json())
+        super().execute('''INSERT OR REPLACE INTO players (id, first_name, last_name, team_id, likes, dislikes, bats, throws, number, position, augments, home, stats) VALUES (:id, :first_name, :last_name, :team_id, :likes, :dislikes, :bats, :throws, :number, :position, :augments, :home, :stats)''', player.get_json())
         if commit: super().commit()
 
     def fetch_player_object(self, id: str, day: int) -> Player:
@@ -338,10 +353,17 @@ def create_tables():
     TeamsDatabase().create_table()
     LeaguesDatabase().create_table()
     GamesDatabase().create_table()
+    PlayersDatabase().create_table()
 
 def close_databases():
     TeamsDatabase().close()
     LeaguesDatabase().close()
     GamesDatabase().close()
+    PlayersDatabase().close()
 
 atexit.register(close_databases)
+
+teamsDatabase = TeamsDatabase()
+leaguesDatabase = LeaguesDatabase()
+gamesDatabase = GamesDatabase()
+playersDatabase = PlayersDatabase()

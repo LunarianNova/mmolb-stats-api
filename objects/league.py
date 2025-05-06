@@ -14,6 +14,8 @@ class League:
             self.name = data.get("Name", "Not Found")
             self.teams = [x for x in data.get("Teams", [])]
             self.id = data.get("_id", None)
+        if type(self.teams) != list:
+            self.teams = ast.literal_eval(self.teams)
     
     def get_json(self) -> dict:
-        return {"id": self.id, "color": self.color, "emoji": self.emoji, "league_type": self.league_type, "name": self.name, "teams": ast.literal_eval(self.teams)}
+        return {"id": self.id, "color": self.color, "emoji": self.emoji, "league_type": self.league_type, "name": self.name, "teams": self.teams}
