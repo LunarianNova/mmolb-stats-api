@@ -25,5 +25,5 @@ class Team:
         if type(self.record) != dict:
             self.record = json.loads(self.record)
         if type(self.elo) != dict:
-            self.elo = json.loads(self.record)
+            self.elo = json.loads(self.elo)
         return {"id": self.id, "color": self.color, "emoji": self.emoji, "full_location": self.full_location, "league": self.league, "location": self.location, "name": self.name, "record": self.record, "elo": self.elo, "rank": self.rank}
