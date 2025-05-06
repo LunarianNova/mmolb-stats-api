@@ -257,6 +257,7 @@ class PlayersDatabase(Database):
         super().__init__('players.db')
 
     def create_table(self) -> None:
+        super().execute_commit('''CREATE TABLE IF NOT EXISTS bins(day INTEGER, season INTEGER, number INTEGER, data STRING)''')
         super().execute_commit(f'''CREATE TABLE IF NOT EXISTS players(id NOT NULL, season INTEGER NOT NULL, day INTEGER NOT NULL, first_name STRING, last_name STRING, team_id STRING, likes STRING, dislikes STRING, bats STRING, throws STRING, number STRING, position STRING, augments INTEGER, home STRING, stats STRING, PRIMARY KEY(id, day))''')
 
     def upsert_player(self, player: Player, commit:bool=False) -> None:
@@ -273,7 +274,8 @@ class PlayersDatabase(Database):
     def calculate_median(self, day: int, season: int) -> None:
         # Get all players
         players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players WHERE day = ? AND season = ?''', (day, season,))]
-        median_player = {"id": "median", "first_name": "Median Player", "last_name": "(All Leagues)", "Stats": {}}
+        if players == []: return
+        median_player = {"_id": f"medianS{season}D{day}", "FirstName": "Median Player", "LastName": "(All Leagues)", "Stats": {}}
 
         # Loop through stats
         for stat in STATS:
@@ -290,13 +292,16 @@ class PlayersDatabase(Database):
         median_player.season = season
         self.upsert_player(median_player, commit=True)
 
+    # This one is lazy...
+    def calculate_all_medians(self, season: int) -> None:
+        for day in range(200):
+            self.calculate_median(day, season)
+
     # Also chunk this?
     # Also not tested. Like everything else I've written thus far
     def calculate_bins(self, day: int, season: int) -> None:
-        super().execute('''DROP TABLE IF EXISTS bins''')
-        super().execute_commit('''CREATE TABLE bins(day INTEGER, season INTEGER, number INTEGER, data STRING)''')
-
         players = [Player(p) for p in super().execute_fetchall(f'''SELECT * FROM players WHERE day = ? AND season = ?''', (day, season,))]
+        if players == []: return
         # Calculated stats
         stats = ['strikeouts_per_nine_innings', 'walks_per_nine_innings', 'home_runs_per_nine_innings', 'walks_and_hits_per_inning_played', 'earned_run_average', 'innings_pitched', 'stolen_base_percentage', 'slugging_percentage', 'on_base_plus_slugging', 'on_base_percentage', 'batting_average']
         binned_players = [{} for _ in range(9)]
@@ -319,6 +324,11 @@ class PlayersDatabase(Database):
         rows = [(day, season, i, store_json(binned_players[i])) for i in range(9)]
         super().execute_many('INSERT INTO bins(day, season, number, data) VALUES(?, ?, ?, ?)', rows)
         super().commit()
+
+    # This one is lazy... too...
+    def calculate_all_bins(self, season: int) -> None:
+        for day in range(200):
+            self.calculate_bins(day, season)
 
     def update(self, destructive:bool=False) -> None:
         chunk_size = 1024
@@ -348,8 +358,8 @@ class PlayersDatabase(Database):
                 self.upsert_player(p)
             super().commit()
 
-        self.calculate_median()
-        self.calculate_bins()
+        self.calculate_all_medians(0)
+        self.calculate_all_bins(0)
 
 def create_tables():
     TeamsDatabase().create_table()
