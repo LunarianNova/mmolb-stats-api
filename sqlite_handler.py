@@ -260,11 +260,13 @@ class PlayersDatabase(Database):
         super().execute_commit(f'''CREATE TABLE IF NOT EXISTS players(id NOT NULL, season INTEGER NOT NULL, day INTEGER NOT NULL, first_name STRING, last_name STRING, team_id STRING, likes STRING, dislikes STRING, bats STRING, throws STRING, number STRING, position STRING, augments INTEGER, home STRING, stats STRING, PRIMARY KEY(id, day))''')
 
     def upsert_player(self, player: Player, commit:bool=False) -> None:
-        super().execute('''INSERT OR REPLACE INTO players (id, first_name, last_name, team_id, likes, dislikes, bats, throws, number, position, augments, home, stats) VALUES (:id, :first_name, :last_name, :team_id, :likes, :dislikes, :bats, :throws, :number, :position, :augments, :home, :stats)''', player.get_json())
+        if type(player.stats) == dict:
+            player.stats = json.dumps(player.stats)
+        super().execute('''INSERT OR REPLACE INTO players (id, season, day, first_name, last_name, team_id, likes, dislikes, bats, throws, number, position, augments, home, stats) VALUES (:id, :season, :day, :first_name, :last_name, :team_id, :likes, :dislikes, :bats, :throws, :number, :position, :augments, :home, :stats)''', player.get_json())
         if commit: super().commit()
 
-    def fetch_player_object(self, id: str, day: int) -> Player:
-        data = super().execute_fetchone(f'''SELECT * FROM players{day} WHERE id = ?''', (id,))
+    def fetch_player_object(self, id: str, day: int, season: int) -> Player:
+        data = super().execute_fetchone(f'''SELECT * FROM players WHERE id = ? AND day = ? AND season = ?''', (id, day, season,))
         return Player(data)
     
     # Chunk this?
