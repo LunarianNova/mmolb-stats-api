@@ -307,17 +307,16 @@ class PlayersDatabase(Database):
         binned_players = [{} for _ in range(9)]
 
         for stat in stats:
-            data = []
+            values = []
             for player in players:
                 try:
                     # Has to calculate the stat, so it needs to be player object
-                    v = getattr(player, 'get_' + stat)()
-                    if v != 0:
-                        data.append(v)
+                    v = player.stats.get(stat, 0)
+                    if v != 0: values.append(v)
                 except ZeroDivisionError:
                     pass
-            if data:
-                percentiles = np.percentile(data, [10 * i for i in range(1, 10)])
+            if values:
+                percentiles = np.percentile(values, [10 * i for i in range(1, 10)])
                 for i, value in enumerate(percentiles):
                     binned_players[i][stat] = value
             
