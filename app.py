@@ -16,6 +16,11 @@ app = FastAPI()
 async def root() -> dict:
     return {"message": "Hello World"}
 
+@app.get("/teams", response_model=List[dict])
+async def get_all_teams() -> List[dict]:
+    teams = teamsDatabase.execute_fetchall('''SELECT * FROM teams''')
+    return [Team(t).get_json() for t in teams]
+
 @app.get("/team/{team_id}")
 async def get_team_by_id(team_id: str) -> dict:
     team = teamsDatabase.fetch_team_object(team_id)
