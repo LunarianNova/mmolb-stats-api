@@ -22,16 +22,19 @@ async def get_team_by_id(team_id: str) -> dict:
     return team.get_json()
 
 @app.get("/team/{team_id}/players", response_model=List[dict])
-async def get_players_in_team(team_id: str) -> dict:
-    max_day = playersDatabase.execute_fetchone('''SELECT MAX(day) FROM players''')[0]
-    players = playersDatabase.execute_fetchall('''SELECT * FROM players WHERE team_id = ? AND day = ?''', (team_id, max_day,))
-    players = [Player(p).get_json() for p in players]
-    offset = 0
-    while players == []:
-        offset += 1
-        players = playersDatabase.execute_fetchall(f'''SELECT * FROM players WHERE team_id = ? AND day = ?''', (team_id, max_day-offset,))
-        players = [Player(p).get_json() for p in players]
+async def get_players_in_team(team_id: str) -> list[dict]:
+    # Gets all players that were ever on the team in history
+    players = playersDatabase.execute_fetchall('''SELECT DISTINCT id FROM players WHERE team_id = ?''', (team_id,))
+    player_obj = []
+    for i in players:
+        p = playersDatabase.execute_fetchone('''SELECT * FROM players WHERE id = ? AND day = (SELECT MAX(day) FROM players WHERE id = ?)''', (i[0], i[0],))
+        player_obj.append(Player(p))
+    players = [p.get_json() for p in player_obj]   
     return players
+
+@app.get("/team/{team_id}/games", response_model=List[dict])
+async def get_games_by_team(team_id: str) -> list[dict]:
+    ...
 
 async def update_teams_leagues_games():
     global start_time
@@ -52,6 +55,7 @@ async def run_update():
             await asyncio.sleep(180)
         asyncio.create_task(update_players())
 
+# Deprecated, but I'm too lazy to find the new method
 @app.on_event('startup')
 async def app_startup():
     global start_time
