@@ -333,7 +333,9 @@ class PlayersDatabase(Database):
         chunk_size = 1024
         buffer = []
         date = get_json("https://mmolb.com/api/time")
-        day = date["season_day"]
+        # This should in production take in the time of day as well
+        # So that it will still update the last day ~30 minutes through the new one
+        day = date["season_day"] 
         season = date["season_number"]
         # Iterable now (:
         # Also this is the line I had mistyped that made the old system break (get_players vs get_updated_players)

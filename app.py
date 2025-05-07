@@ -7,6 +7,8 @@ And I have no formal instruction in python, so be nice please (:
 from fastapi import FastAPI
 from sqlite_handler import *
 from typing import List
+import asyncio
+import time
 
 app = FastAPI()
 
@@ -30,3 +32,28 @@ async def get_players_in_team(team_id: str) -> dict:
         players = playersDatabase.execute_fetchall(f'''SELECT * FROM players WHERE team_id = ? AND day = ?''', (team_id, max_day-offset,))
         players = [Player(p).get_json() for p in players]
     return players
+
+async def update_teams_leagues_games():
+    global start_time
+    teamsDatabase.update_all()
+    leaguesDatabase.update()
+    gamesDatabase.update()
+    print("Finished updating teams, leagues, games. Running for " + str((time.time() - start_time)/60) + " minutes")
+
+async def update_players():
+    global start_time
+    playersDatabase.update(destructive=True)
+    print("Finished updating players. Running for " + str((time.time() - start_time)/60) + " minutes")
+
+async def run_update():
+    while True:
+        for _ in range(5):
+            asyncio.create_task(update_teams_leagues_games())
+            await asyncio.sleep(180)
+        asyncio.create_task(update_players())
+
+@app.on_event('startup')
+async def app_startup():
+    global start_time
+    start_time = time.time()
+    asyncio.create_task(run_update())
