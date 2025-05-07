@@ -22,8 +22,11 @@ async def get_all_teams() -> List[dict]:
     return [Team(t).get_json() for t in teams]
 
 @app.get("/team/{team_id}")
-async def get_team_by_id(team_id: str) -> dict:
+async def get_team_by_id(team_id: str, named_league:bool=False) -> dict:
     team = teamsDatabase.fetch_team_object(team_id)
+    if named_league:
+        team.league = leaguesDatabase.fetch_league_object(team.league)
+        team.league = team.league.emoji + " " + team.league.name + " League"
     return team.get_json()
 
 @app.get("/team/{team_id}/players", response_model=List[dict])
