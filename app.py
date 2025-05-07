@@ -34,7 +34,8 @@ async def get_players_in_team(team_id: str) -> list[dict]:
 
 @app.get("/team/{team_id}/games", response_model=List[dict])
 async def get_games_by_team(team_id: str) -> list[dict]:
-    ...
+    games = gamesDatabase.execute_fetchall('''SELECT * FROM games WHERE home_team_id = ? OR away_team_id = ? ORDER BY day DESC''', (team_id, team_id,))
+    return [Game(g).get_json() for g in games]
 
 async def update_teams_leagues_games():
     global start_time
